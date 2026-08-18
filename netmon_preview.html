@@ -1,0 +1,858 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>NETWORK MONITOR 3.4 — Live Preview</title>
+<style>
+  :root {
+    --bg: #0C1117;
+    --sidebar: #0F1419;
+    --card: #161B22;
+    --header: #0D1117;
+    --border: #30363D;
+    --text: #E6EAEF;
+    --muted: #8B949E;
+    --cyan: #0891B2;
+    --pink: #E84C89;
+    --green: #2EA043;
+    --amber: #D97706;
+    --purple: #A855F7;
+    --blue: #3B82F6;
+    --red: #F85149;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: "Segoe UI", Tahoma, sans-serif;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  .mono { font-family: "Cascadia Mono", Consolas, "Courier New", monospace; }
+
+  /* ── Header ─────────────────────────────── */
+  header {
+    height: 64px;
+    background: var(--header);
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    padding: 0 20px;
+    gap: 14px;
+    flex-shrink: 0;
+  }
+  header h1 {
+    font-family: "Cascadia Mono", Consolas, "Courier New", monospace;
+    font-size: 18px;
+    color: var(--cyan);
+    letter-spacing: 1px;
+    white-space: nowrap;
+  }
+  .hdr-strip { display: flex; align-items: center; gap: 16px; flex: 1; justify-content: center; }
+  .hdr-strip span { font-size: 14px; white-space: nowrap; }
+  .badge-live { color: var(--green); font-weight: bold; }
+  .badge-alert { color: var(--pink); font-weight: bold; min-width: 110px; text-align: center; }
+  .hdr-btns { display: flex; gap: 8px; }
+  .btn {
+    border: 1px solid var(--border);
+    background: var(--card);
+    color: var(--text);
+    border-radius: 7px;
+    padding: 7px 14px;
+    font-size: 13px;
+    font-weight: bold;
+    cursor: pointer;
+    transition: filter .12s;
+    white-space: nowrap;
+  }
+  .btn:hover { filter: brightness(1.25); }
+  .btn.green { background: #065F46; color: var(--green); }
+  .btn.pink { background: #7F1D1D; color: #FCA5A5; }
+  .btn.blue { background: var(--blue); color: #FFF; }
+
+  /* ── Tabs ───────────────────────────────── */
+  nav {
+    display: flex;
+    gap: 4px;
+    padding: 8px 12px 0;
+    background: var(--bg);
+    overflow-x: auto;
+    flex-shrink: 0;
+    scrollbar-width: thin;
+  }
+  nav button {
+    background: var(--sidebar);
+    color: var(--text);
+    border: none;
+    border-radius: 10px 10px 0 0;
+    padding: 9px 14px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  nav button.active { background: var(--cyan); color: #fff; }
+
+  /* ── Main content ───────────────────────── */
+  main { flex: 1; padding: 12px; overflow: auto; }
+  .tab { display: none; height: 100%; }
+  .tab.active { display: grid; }
+  #tab-dash { grid-template-columns: 2fr 3fr; gap: 10px; }
+  #tab-speed, #tab-ping, #tab-games { grid-template-columns: 1fr; grid-template-rows: auto 1fr; gap: 10px; }
+
+  .card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 12px 14px;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    overflow: hidden;
+  }
+  .card h2 {
+    font-size: 14px;
+    color: var(--cyan);
+    font-family: "Cascadia Mono", Consolas, "Courier New", monospace;
+    margin-bottom: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .card h2 .sub { color: var(--muted); font-size: 12px; font-family: "Segoe UI", sans-serif; }
+  .muted { color: var(--muted); }
+
+  /* ── Throughput ─────────────────────────── */
+  .speed-row { display: flex; gap: 24px; margin-bottom: 6px; }
+  .speed-row b.dl { color: var(--cyan); font-size: 17px; }
+  .speed-row b.ul { color: var(--pink); font-size: 17px; }
+  .totals {
+    background: var(--sidebar);
+    border-radius: 8px;
+    padding: 6px 14px;
+    margin-bottom: 8px;
+    display: flex;
+    justify-content: space-between;
+    font-size: 13px;
+  }
+  .totals .dl { color: var(--cyan); font-weight: bold; }
+  .totals .ul { color: var(--pink); font-weight: bold; }
+  canvas#bw { width: 100%; flex: 1; min-height: 120px; }
+
+  /* ── Tables ─────────────────────────────── */
+  .table-wrap { flex: 1; overflow: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+  th {
+    position: sticky; top: 0;
+    background: var(--border);
+    color: var(--cyan);
+    font-family: "Cascadia Mono", Consolas, "Courier New", monospace;
+    font-weight: bold;
+    padding: 6px 8px;
+    text-align: left;
+  }
+  td { padding: 4px 8px; border-bottom: 1px solid #21262d; font-family: "Cascadia Mono", Consolas, "Courier New", monospace; }
+  tr:nth-child(even) td { background: rgba(255,255,255,0.02); }
+  .ok { color: var(--green); }
+  .warn { color: var(--amber); }
+  .bad { color: var(--pink); }
+
+  /* ── Speed test ─────────────────────────── */
+  .ctrl { display: flex; align-items: center; gap: 12px; padding: 4px 2px; }
+  .ctrl select, .ctrl input {
+    background: var(--card); color: var(--text);
+    border: 1px solid var(--border); border-radius: 8px;
+    padding: 8px 10px; font-size: 13px;
+  }
+  .metrics { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+  .metric {
+    border: 2px solid var(--border); border-radius: 16px;
+    padding: 16px; text-align: center; background: var(--card);
+  }
+  .metric .label { color: var(--muted); font-size: 13px; font-weight: bold; margin-bottom: 6px; }
+  .metric .value { font-family: "Cascadia Mono", Consolas, "Courier New", monospace; font-size: 30px; font-weight: bold; }
+  .metric .unit { color: var(--muted); font-size: 12px; margin-top: 4px; }
+  .logbox {
+    flex: 1; background: var(--header); border-radius: 10px;
+    font-family: "Cascadia Mono", Consolas, "Courier New", monospace; font-size: 13px; color: var(--amber);
+    padding: 12px; overflow: auto; white-space: pre-wrap; line-height: 1.5;
+  }
+
+  /* ── Ping monitor ───────────────────────── */
+  .ping-metrics { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 8px; }
+  .pm-cell { background: var(--sidebar); border-radius: 10px; padding: 8px 10px; }
+  .pm-cell .k { color: var(--muted); font-size: 11px; font-weight: bold; }
+  .pm-cell .v { font-family: "Cascadia Mono", Consolas, "Courier New", monospace; font-size: 20px; font-weight: bold; }
+  .pm-body { display: grid; grid-template-columns: 3fr 2fr; gap: 10px; flex: 1; min-height: 0; }
+  .pm-chart-wrap { flex: 1; min-height: 0; }
+  canvas#pingChart { width: 100%; height: 100%; min-height: 140px; }
+  .hosts { display: flex; flex-direction: column; gap: 6px; overflow: auto; }
+  .host-card {
+    background: #1D2A38; border-radius: 12px; padding: 8px 10px; cursor: pointer;
+    border: 1px solid transparent; font-size: 12.5px;
+  }
+  .host-card.selected { background: #1F4D78; border-color: var(--cyan); }
+  .host-card .h { font-weight: bold; font-size: 13px; }
+
+  /* ── Game servers ───────────────────────── */
+  .gs-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+  .gs-card {
+    border: 1px solid var(--border); border-radius: 12px; padding: 10px 12px; background: var(--card);
+    transition: border-color .3s;
+  }
+  .gs-card.best { border: 2px solid var(--green); }
+  .gs-card .name { font-weight: bold; font-size: 14px; display: flex; justify-content: space-between; }
+  .gs-card .host { color: var(--muted); font-size: 11px; margin: 2px 0 6px; }
+  .gs-card .ping { font-family: "Cascadia Mono", Consolas, "Courier New", monospace; font-size: 22px; font-weight: bold; }
+  .gs-card .stats { color: var(--muted); font-family: "Cascadia Mono", Consolas, "Courier New", monospace; font-size: 11px; }
+
+  /* ── Placeholder tabs ───────────────────── */
+  .ph { display: flex; flex-direction: column; gap: 10px; }
+  .ph .row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .ph .half { min-height: 180px; }
+  .ph ul { margin: 6px 0 0 18px; color: var(--muted); font-size: 13px; line-height: 1.7; }
+
+  footer { flex-shrink: 0; text-align: center; color: var(--muted); font-size: 11px; padding: 4px; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>◈ NETWORK MONITOR 3.4</h1>
+  <div class="hdr-strip">
+    <span class="badge-live" id="hdrLive">◉ LIVE</span>
+    <span class="badge-alert" id="hdrAlert"></span>
+    <span style="color:var(--cyan)">🌍 Global: <span id="hdrPingG" class="mono">-- ms</span></span>
+    <span style="color:var(--green)">🌐 Iran: <span id="hdrPingI" class="mono">-- ms</span></span>
+    <span>IP: <span id="hdrIp" class="mono">192.168.1.22</span></span>
+    <span>⏱ <span id="hdrUp" class="mono">00:00:00</span></span>
+  </div>
+  <div class="hdr-btns">
+    <button class="btn green">📥 Export</button>
+    <button class="btn" id="btnRefresh">🔄 Refresh</button>
+    <button class="btn pink" id="btnPause">⏸ Pause</button>
+    <button class="btn blue" id="btnTheme">🌓 Theme</button>
+  </div>
+</header>
+
+<nav id="tabsNav">
+  <button data-tab="dash" class="active">🖥 Dashboard</button>
+  <button data-tab="speed">⚡ Speed Test</button>
+  <button data-tab="ping">📡 Ping Monitor</button>
+  <button data-tab="games">🎮 Game Servers</button>
+  <button data-tab="qos">🚀 Game Boost</button>
+  <button data-tab="auto">🤖 Automation</button>
+  <button data-tab="dns">🔍 DNS Tools</button>
+  <button data-tab="scan">🛡 Port Scanner</button>
+  <button data-tab="ipscan">🔎 IP Scanner</button>
+  <button data-tab="geo">🗺 Geo-IP</button>
+  <button data-tab="config">⚙️ Config Dump</button>
+  <button data-tab="help">❓ Help</button>
+</nav>
+
+<main>
+
+  <!-- ═══ DASHBOARD ═══ -->
+  <section id="tab-dash" class="tab active">
+    <div class="card">
+      <h2>📶 NETWORK THROUGHPUT</h2>
+      <div class="speed-row">
+        <b class="dl">▼ DL: <span id="dlNow">0.00</span> MB/s</b>
+        <b class="ul">▲ UL: <span id="ulNow">0.00</span> MB/s</b>
+      </div>
+      <div class="totals">
+        <span class="dl">Total Recv: <span id="totDl">0 B</span></span>
+        <span class="ul">Total Sent: <span id="totUl">0 B</span></span>
+      </div>
+      <canvas id="bw"></canvas>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:10px;min-height:0">
+      <div class="card" style="flex:1.4">
+        <h2>⚙️ PROCESSES <span class="sub"><button class="btn pink" style="padding:4px 10px">☠ Kill</button></span></h2>
+        <div class="table-wrap">
+          <table id="procTable">
+            <thead><tr><th>Process</th><th>PID</th><th>Network</th><th>Conns</th><th>CPU</th><th>RAM</th><th>Firewall</th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+      <div class="card" style="flex:1">
+        <h2>🔗 CONNECTIONS <span class="sub">🛡 suspicious ports flagged</span></h2>
+        <div class="table-wrap">
+          <table id="connTable">
+            <thead><tr><th>Local Socket</th><th>Remote</th><th>State</th><th>PID</th><th>Risk</th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══ SPEED TEST ═══ -->
+  <section id="tab-speed" class="tab">
+    <div class="card ctrl">
+      <b>🎯 Target Node:</b>
+      <select id="srvSelect">
+        <option>Auto (Cloudflare Edge)</option>
+        <option>Europe (CacheFly Mirror)</option>
+        <option>United States Edge</option>
+      </select>
+      <button class="btn green" id="btnSpd" style="margin-left:auto;padding:10px 22px">🚀 START SPEEDTEST</button>
+    </div>
+    <div style="display:grid;grid-template-rows:auto 1fr;gap:10px;min-height:0">
+      <div class="metrics">
+        <div class="metric"><div class="label">⚡ PING</div><div class="value" style="color:var(--cyan)" id="mPing">0</div><div class="unit">ms</div></div>
+        <div class="metric"><div class="label">〰 JITTER</div><div class="value" style="color:var(--pink)" id="mJit">0</div><div class="unit">ms</div></div>
+        <div class="metric"><div class="label">📥 DOWNLOAD</div><div class="value" style="color:var(--green)" id="mDl">0.00</div><div class="unit">Mbps</div></div>
+        <div class="metric"><div class="label">📤 UPLOAD</div><div class="value" style="color:var(--amber)" id="mUl">0.00</div><div class="unit">Mbps</div></div>
+      </div>
+      <div class="card" style="min-height:0">
+        <div class="logbox" id="spdLog">─── SPEEDTEST ENGINE READY ─────────────────────────────</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══ PING MONITOR ═══ -->
+  <section id="tab-ping" class="tab">
+    <div class="card ctrl">
+      <b>🎯 Target Host / IP / Domain</b>
+      <input id="pingHost" value="8.8.8.8" style="width:240px">
+      <button class="btn" id="btnPingAdd" style="margin-left:auto">＋ Add</button>
+      <button class="btn pink" id="btnPingRemove">✕ Remove</button>
+      <button class="btn green" id="btnPingToggle">▶ Start</button>
+    </div>
+    <div style="display:grid;grid-template-rows:auto 1fr;gap:10px;min-height:0">
+      <div class="ping-metrics">
+        <div class="pm-cell"><div class="k">CURRENT</div><div class="v" style="color:var(--cyan)" id="pmCur">—</div></div>
+        <div class="pm-cell"><div class="k">AVERAGE</div><div class="v" style="color:var(--green)" id="pmAvg">—</div></div>
+        <div class="pm-cell"><div class="k">MIN / MAX</div><div class="v" style="color:var(--amber)" id="pmMinMax">—</div></div>
+        <div class="pm-cell"><div class="k">PACKET LOSS</div><div class="v" style="color:var(--pink)" id="pmLoss">—</div></div>
+      </div>
+      <div class="pm-body">
+        <div class="card" style="min-height:0">
+          <h2>📈 LIVE LATENCY CHART <span class="sub" id="pingBadge">○ IDLE</span></h2>
+          <div class="pm-chart-wrap"><canvas id="pingChart"></canvas></div>
+        </div>
+        <div class="card">
+          <h2>🖥 MONITORED HOSTS</h2>
+          <div class="hosts" id="hostsList"></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══ GAME SERVERS ═══ -->
+  <section id="tab-games" class="tab">
+    <div class="card ctrl">
+      <b>🎮 Game Server Ping Monitor</b>
+      <span class="muted">Live latency, jitter and packet loss for game/CDN endpoints</span>
+      <button class="btn green" id="btnGs" style="margin-left:auto">▶ Start</button>
+      <select id="gsInterval"><option>3s</option><option>1s</option><option>5s</option><option>10s</option></select>
+      <button class="btn blue">⬇ CSV</button>
+      <span class="muted" id="gsStatus">○ IDLE</span>
+    </div>
+    <div style="overflow:auto">
+      <div class="gs-grid" id="gsGrid"></div>
+    </div>
+  </section>
+
+  <!-- ═══ PLACEHOLDER TABS ═══ -->
+  <section id="tab-qos" class="tab ph">
+    <div class="card"><h2>🚀 GAME BOOST — Windows QoS</h2>
+      <ul>
+        <li>Prioritize network packets (DSCP tagging) for a chosen game.</li>
+        <li>Set CPU priority: High (DSCP 46), Medium (DSCP 34), Low (DSCP 10).</li>
+        <li>Firewall Block/Allow per application.</li>
+        <li>Live status panel re-verifies QoS via <span class="mono">Get-NetQosPolicy</span>.</li>
+      </ul>
+    </div>
+    <div class="row">
+      <div class="card half"><h2>⚡ SYSTEM BOOST</h2><ul><li>Power Plan switcher (Balanced / High Performance / Ultimate)</li><li>RAM Trim (EmptyWorkingSet)</li><li>I/O Priority per process</li></ul></div>
+      <div class="card half"><h2>🛡 MANAGED APPLICATIONS</h2><ul><li>Add any running .exe</li><li>Per-app QoS + firewall + CPU priority</li><li>Real traffic readout (TCP ESTATS)</li></ul></div>
+    </div>
+  </section>
+
+  <section id="tab-auto" class="tab ph">
+    <div class="row">
+      <div class="card half"><h2>📦 PROFILES</h2><ul><li><b>Gaming Boost</b> — High Performance plan + Cloudflare DNS + RAM trim</li><li><b>Iran Gaming DNS</b> — 10.202.10.10 / 10.202.10.11</li><li>One-click Activate / Deactivate with revert actions</li></ul></div>
+      <div class="card half"><h2>⚡ RULES</h2><ul><li>ping_above / ping_below / packet_loss_above</li><li>bandwidth_above / bandwidth_below</li><li>app_running / cpu_above / time_range</li><li>Cooldown + hold-time debouncing</li></ul></div>
+    </div>
+    <div class="card"><h2>📋 ENGINE LOG</h2><div class="logbox" style="color:var(--green)">[engine idle — rules can fire on ping / bandwidth / app events]</div></div>
+  </section>
+
+  <section id="tab-dns" class="tab ph">
+    <div class="row">
+      <div class="card half"><h2>🛠️ ADVANCED DNS TOOLS</h2><ul><li>Resolve (A / AAAA) &amp; Reverse (PTR) lookups</li><li>Raw UDP query timing to port 53</li></ul></div>
+      <div class="card half"><h2>🌐 DNS Speed Test</h2><ul><li>Cloudflare, Google, Quad9, AdGuard, Shecan, Electro, Radar…</li><li>Fastest server is suggested and one-click applied</li></ul></div>
+    </div>
+  </section>
+
+  <section id="tab-scan" class="tab ph">
+    <div class="row">
+      <div class="card half"><h2>🛡 PORT SCANNER</h2><ul><li>Ranges (20-1024) or lists (80,443)</li><li>Parallel connect scan, 60 workers</li><li>Well-known service names</li></ul></div>
+      <div class="card half"><h2>🔎 IP SCANNER</h2><ul><li>CIDR (192.168.1.0/24) or range (192.168.1.1-50)</li><li>Latency + hostname per active host</li></ul></div>
+    </div>
+  </section>
+
+  <section id="tab-ipscan" class="tab ph">
+    <div class="row">
+      <div class="card half"><h2>🔎 IP SCANNER</h2><ul><li>CIDR (192.168.1.0/24) or range (192.168.1.1-50)</li><li>Latency + hostname per active host</li></ul></div>
+      <div class="card half"><h2>🗺 GEO-IP</h2><ul><li>ip-api.com / freeipapi / ip.sb fallbacks</li><li>Country, ISP, ASN, coords + Google Maps</li></ul></div>
+    </div>
+  </section>
+
+  <section id="tab-geo" class="tab ph">
+    <div class="card"><h2>⬡ GEOIPX INTELLIGENCE ENGINE</h2>
+      <ul><li>Enter any remote IP or domain → trace country / region / city / ISP / ASN</li><li>Auto-detect your public IP (api64.ipify.org / icanhazip.com)</li><li>Open location directly in Google Maps</li></ul>
+    </div>
+  </section>
+
+  <section id="tab-config" class="tab ph">
+    <div class="card"><h2>🌐 NETWORK CONFIGURATION</h2>
+      <div class="logbox" style="color:var(--text)">
+Windows: ipconfig /all<br>Linux: ip addr &amp; ip route &amp; /etc/resolv.conf<br>macOS: ifconfig &amp; netstat -rn
+      </div>
+    </div>
+  </section>
+
+  <section id="tab-help" class="tab ph">
+    <div class="card"><h2>📖 راهنمای کاربر — NETWORK MONITOR v3.4</h2>
+      <p style="color:var(--text);margin:0 0 10px">هر تب یک ابزار مستقل است؛ با یک نگاه ببینید هر کدام چه کاری انجام می‌دهد و چطور از نتیجه استفاده کنید:</p>
+      <ul style="line-height:1.7">
+        <li>🖥 <b>داشبورد</b> — سرعت لحظه‌ای دانلود/آپلود، لیست فرآیندهای پرمصرف (کلیک راست = بستن/نمودار/فایروال)، اتصالات فعال با سطح ریسک امنیتی و نمودار زنده پهنای باند. <i>نقطه شروع برنامه.</i></li>
+        <li>📈 <b>تاریخچه</b> — نمودار پهنای باند ۲۴ ساعت اخیر + آمار پینگ. دکمه 📄 Daily Report یک گزارش کامل HTML/PDF از امروز می‌سازد.</li>
+        <li>📊 <b>آداپتورها</b> — مشخصات کامل کارت شبکه (سرعت، IP، MAC) و خلاصه سیستم. برای تشخیص «چرا اینترنت کند است» اول اینجا را ببینید.</li>
+        <li>⚡ <b>تست سرعت</b> — پینگ، جیتر، دانلود و آپلود واقعی. پینگ زیر ۳۰ عالی، زیر ۸۰ خوب است؛ جیتر بالا = اتصال لرزان.</li>
+        <li>🗺 <b>موقعیت‌یاب</b> — کشور، شهر و ISP هر IP یا دامنه + نمایش روی نقشه. از داشبورد هم با کلیک راست روی اتصال قابل دسترسی است.</li>
+        <li>📡 <b>پایشگر پینگ</b> — نمودار زنده ۴۰ نمونه آخر؛ خط صاف = پایدار، نقطه قرمز = بسته ازدست‌رفته (Packet Loss).</li>
+        <li>🛡 <b>اسکنر پورت</b> — پورت‌های باز روی یک سرور (بازه: 20-1024 یا لیست: 80,443). فقط روی سرور خودتان!</li>
+        <li>🔍 <b>ابزارهای DNS</b> — تبدیل دامنه↔IP و مقایسه سرعت سرورهای DNS مختلف با رنگ‌بندی سبز/قرمز.</li>
+        <li>🔧 <b>تنظیم DNS</b> — تغییر DNS سیستم برای باز شدن سریع‌تر سایت‌ها + بازگشت به DHCP و پاک‌سازی کش. نیازمند ادمین.</li>
+        <li>🔎 <b>اسکنر IP</b> — پیدا کردن همه دستگاه‌های متصل به شبکه محلی (مثل 192.168.1.0/24). برای کشف دستگاه‌های ناشناس عالی است.</li>
+        <li>🚀 <b>گیم بوست</b> — اولویت‌بندی QoS ترافیک بازی + اولویت CPU + فایروال برای کاهش لگ (فقط ویندوز، نیازمند ادمین).</li>
+        <li>🎮 <b>سرورهای بازی</b> — پینگ زنده سرورهای محبوب + اضافه کردن سرور سفارشی برای انتخاب بهترین گزینه.</li>
+        <li>🤖 <b>اتوماسیون</b> — قوانین شرطی مثل «اگر پینگ بالا رفت، DNS گیمینگ فعال کن» که خودکار اجرا می‌شوند.</li>
+        <li>⚙️ <b>خروجی کانفیگ</b> — پیکربندی خام شبکه (ipconfig/ifconfig) برای عیب‌یابی عمیق.</li>
+      </ul>
+      <p style="color:var(--muted);margin-top:12px">میانبرها: Ctrl+R رفرش · Ctrl+E خروجی CSV · Ctrl+P توقف · Ctrl+K بستن فرآیند. بستن پنجره = رفتن به سینی سیستم؛ خروج کامل از منوی سینی.</p>
+    </div>
+  </section>
+
+</main>
+
+<footer>NETWORK MONITOR 3.4 — live HTML preview of the Python/CustomTkinter app · simulated data</footer>
+
+<script>
+"use strict";
+/* ═══ Simulated state ═══ */
+const $ = id => document.getElementById(id);
+const rnd = (a, b) => a + Math.random() * (b - a);
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+
+let paused = false;
+let light = false;
+let startedAt = Date.now();
+let bytesDl = 2.1e9, bytesUl = 0.4e9;
+let dlHist = new Array(60).fill(0), ulHist = new Array(60).fill(0);
+let dlNow = 0, ulNow = 0;
+
+/* ── Header: uptime ── */
+function fmtBytes(b) {
+  const u = ["B", "KB", "MB", "GB", "TB"];
+  let i = 0;
+  while (b >= 1024 && i < u.length - 1) { b /= 1024; i++; }
+  return b.toFixed(1) + " " + u[i];
+}
+setInterval(() => {
+  const s = Math.floor((Date.now() - startedAt) / 1000);
+  const h = String(Math.floor(s / 3600)).padStart(2, "0");
+  const m = String(Math.floor(s / 60) % 60).padStart(2, "0");
+  const ss = String(s % 60).padStart(2, "0");
+  $("hdrUp").textContent = `${h}:${m}:${ss}`;
+}, 1000);
+
+/* ── Theme toggle ── */
+$("btnTheme").addEventListener("click", () => {
+  light = !light;
+  const root = document.documentElement.style;
+  if (light) {
+    root.setProperty("--bg", "#D4DDE8"); root.setProperty("--sidebar", "#CDD5E3");
+    root.setProperty("--card", "#E8EEF8"); root.setProperty("--header", "#C5CED9");
+    root.setProperty("--border", "#A8B5D1"); root.setProperty("--text", "#2C3E50");
+    root.setProperty("--muted", "#7A8FA3");
+  } else {
+    root.setProperty("--bg", "#0C1117"); root.setProperty("--sidebar", "#0F1419");
+    root.setProperty("--card", "#161B22"); root.setProperty("--header", "#0D1117");
+    root.setProperty("--border", "#30363D"); root.setProperty("--text", "#E6EAEF");
+    root.setProperty("--muted", "#8B949E");
+  }
+});
+
+/* ── Pause / Refresh ── */
+$("btnPause").addEventListener("click", () => {
+  paused = !paused;
+  $("btnPause").textContent = paused ? "▶ Resume" : "⏸ Pause";
+  $("hdrLive").textContent = paused ? "⏸ PAUSED" : "◉ LIVE";
+  $("hdrLive").style.color = paused ? "var(--amber)" : "var(--green)";
+});
+$("btnRefresh").addEventListener("click", () => {
+  $("btnRefresh").textContent = "⟳ ...";
+  setTimeout(() => { $("btnRefresh").textContent = "🔄 Refresh"; }, 600);
+});
+
+/* ── Tabs ── */
+document.querySelectorAll("#tabsNav button").forEach(btn => {
+  btn.addEventListener("click", () => {
+    document.querySelectorAll("#tabsNav button").forEach(b => b.classList.remove("active"));
+    document.querySelectorAll(".tab").forEach(t => t.classList.remove("active"));
+    btn.classList.add("active");
+    $("tab-" + btn.dataset.tab).classList.add("active");
+  });
+});
+
+/* ═══ Bandwidth chart ═══ */
+const bw = $("bw"), bwCtx = bw.getContext("2d");
+function sizeCanvas(c) {
+  const dpr = window.devicePixelRatio || 1;
+  const r = c.getBoundingClientRect();
+  c.width = Math.max(50, r.width * dpr);
+  c.height = Math.max(50, r.height * dpr);
+  c.getContext("2d").setTransform(dpr, 0, 0, dpr, 0, 0);
+}
+function drawBw() {
+  sizeCanvas(bw);
+  const w = bw.width / (window.devicePixelRatio || 1), h = bw.height / (window.devicePixelRatio || 1);
+  bwCtx.clearRect(0, 0, w, h);
+  const max = Math.max(12, ...dlHist, ...ulHist) * 1.15;
+  const pad = 8;
+  bwCtx.strokeStyle = light ? "#A8B5D1" : "#30363D";
+  bwCtx.lineWidth = 1;
+  for (let i = 1; i <= 3; i++) {
+    bwCtx.beginPath();
+    bwCtx.moveTo(pad, pad + (h - 2 * pad) * i / 3);
+    bwCtx.lineTo(w - pad, pad + (h - 2 * pad) * i / 3);
+    bwCtx.stroke();
+  }
+  const plot = (arr, color) => {
+    bwCtx.strokeStyle = color;
+    bwCtx.lineWidth = 1.8;
+    bwCtx.beginPath();
+    arr.forEach((v, i) => {
+      const x = pad + (w - 2 * pad) * i / (arr.length - 1);
+      const y = h - pad - (v / max) * (h - 2 * pad);
+      i ? bwCtx.lineTo(x, y) : bwCtx.moveTo(x, y);
+    });
+    bwCtx.stroke();
+  };
+  plot(dlHist, "#0891B2");
+  plot(ulHist, "#E84C89");
+}
+
+/* ═══ Processes table ═══ */
+const APP_POOL = [
+  ["chrome.exe", 14], ["Discord.exe", 5], ["Spotify.exe", 3], ["Code.exe", 7],
+  ["GameClient.exe", 11], ["Telegram.exe", 4], ["steamwebhelper.exe", 6],
+  ["explorer.exe", 2], ["python.exe", 1], ["svchost.exe", 0], ["Teams.exe", 3],
+  ["firefox.exe", 8],
+];
+function procRow() {
+  const p = APP_POOL[Math.floor(Math.random() * APP_POOL.length)];
+  return {
+    name: p[0], pid: 1000 + Math.floor(Math.random() * 9000),
+    net: rnd(0, 4.8), conns: Math.floor(rnd(1, 60)), cpu: rnd(0, 30), ram: rnd(40, 900),
+    fw: Math.random() < 0.06,
+  };
+}
+let procs = Array.from({ length: 12 }, procRow);
+function renderProcs() {
+  const tb = $("procTable").querySelector("tbody");
+  tb.innerHTML = "";
+  procs.forEach(p => {
+    const tr = document.createElement("tr");
+    tr.innerHTML =
+      `<td>${p.name}</td><td>${p.pid}</td>` +
+      `<td class="${p.net > 3.5 ? "bad" : ""}">${p.net.toFixed(2)}%</td>` +
+      `<td>${p.conns}</td><td>${p.cpu.toFixed(1)}%</td><td>${p.ram.toFixed(0)} MB</td>` +
+      `<td class="${p.fw ? "bad" : "ok"}">${p.fw ? "Blocked" : "Allowed"}</td>`;
+    tb.appendChild(tr);
+  });
+}
+
+/* ═══ Connections table ═══ */
+const REMOTES = [
+  ["185.60.112.153", "1119", "discord"], ["142.250.72.14", "443", "google"],
+  ["104.16.132.229", "443", "cloudflare"], ["162.254.192.1", "27017", "steam"],
+  ["151.101.2.137", "443", "fastly"], ["198.41.209.139", "443", "akamai"],
+  ["10.202.10.10", "53", "iran-dns"], ["185.231.182.126", "443", "403.online"],
+];
+let conns = [];
+function renderConns() {
+  const tb = $("connTable").querySelector("tbody");
+  tb.innerHTML = "";
+  conns.forEach(c => {
+    const tr = document.createElement("tr");
+    const susp = c.risk !== "";
+    tr.innerHTML =
+      `<td>${c.local}</td><td>${c.remote}</td><td>${c.status}</td><td>${c.pid}</td>` +
+      `<td class="${susp ? "bad" : ""}">${c.risk || "—"}</td>`;
+    tb.appendChild(tr);
+  });
+  const n = conns.filter(c => c.risk).length;
+  $("hdrAlert").textContent = n ? `⚠ ${n} THREAT(S)` : "";
+}
+
+/* ═══ Main 1s tick ═══ */
+function tick() {
+  if (paused) return;
+  dlNow = clamp(dlNow + rnd(-1.2, 1.4), 0, 16);
+  ulNow = clamp(ulNow + rnd(-0.4, 0.6), 0, 4);
+  dlHist.push(dlNow); ulHist.push(ulNow);
+  dlHist.shift(); ulHist.shift();
+  bytesDl += dlNow * 1e6; bytesUl += ulNow * 1e6;
+  $("dlNow").textContent = dlNow.toFixed(2);
+  $("ulNow").textContent = ulNow.toFixed(2);
+  $("totDl").textContent = fmtBytes(bytesDl);
+  $("totUl").textContent = fmtBytes(bytesUl);
+
+  $("hdrPingG").textContent = Math.round(rnd(28, 45)) + " ms";
+  $("hdrPingI").textContent = Math.round(rnd(12, 30)) + " ms";
+  $("hdrIp").textContent = Math.random() < 0.05 ? "10.202.10.10" : "192.168.1.22";
+
+  if (Math.random() < 0.3) procs = procs.map(() => procRow());
+  renderProcs();
+  if (Math.random() < 0.25) {
+    const r = REMOTES[Math.floor(Math.random() * REMOTES.length)];
+    conns = [
+      {
+        local: `192.168.1.22:${Math.floor(rnd(49000, 65000))}`,
+        remote: `${r[0]}:${r[1]}`,
+        status: Math.random() < 0.8 ? "ESTABLISHED" : "SYN_SENT",
+        pid: Math.floor(rnd(1000, 9000)),
+        risk: r[1] === "3389" || r[1] === "445" || r[1] === "4444" ? `⚠ PORT ${r[1]}` : "",
+      },
+      ...conns,
+    ].slice(0, 8);
+  }
+  renderConns();
+  drawBw();
+}
+setInterval(tick, 1000);
+tick();
+
+/* ═══ Speed test ═══ */
+let spdRunning = false;
+function spdLog(t) {
+  const el = $("spdLog");
+  el.textContent += "\n" + t;
+  el.scrollTop = el.scrollHeight;
+}
+$("btnSpd").addEventListener("click", () => {
+  if (spdRunning) return;
+  spdRunning = true;
+  $("btnSpd").textContent = "⚡ TESTING...";
+  $("btnSpd").disabled = true;
+  ["mPing", "mJit", "mDl", "mUl"].forEach(id => $(id).textContent = "0");
+  $("spdLog").textContent = "▶ Starting → " + $("srvSelect").value;
+  setTimeout(() => {
+    spdLog("Step 1 — Latency (5 TCP probes)...");
+    const pings = Array.from({ length: 5 }, () => rnd(30, 80));
+    const avg = pings.reduce((a, b) => a + b, 0) / 5;
+    const jit = pings.slice(1).reduce((a, b, i) => a + Math.abs(b - pings[i]), 0) / (pings.length - 1);
+    $("mPing").textContent = Math.round(avg);
+    $("mJit").textContent = Math.round(jit);
+    spdLog(`  Ping: ${Math.round(avg)} ms | Jitter: ${Math.round(jit)} ms`);
+    setTimeout(() => {
+      spdLog("Step 2 — Download test...");
+      let cur = 0;
+      const dlInt = setInterval(() => {
+        cur = clamp(cur + rnd(6, 24), 0, 130);
+        $("mDl").textContent = cur.toFixed(2);
+        if (cur >= 120) {
+          clearInterval(dlInt);
+          spdLog(`  Download: ${cur.toFixed(2)} Mbps`);
+          setTimeout(() => {
+            spdLog("Step 3 — Upload test...");
+            let u = 0;
+            const ulInt = setInterval(() => {
+              u = clamp(u + rnd(1, 4), 0, 24);
+              $("mUl").textContent = u.toFixed(2);
+              if (u >= 21) {
+                clearInterval(ulInt);
+                spdLog(`  Upload: ${u.toFixed(2)} Mbps`);
+                spdLog("══════════════════════════");
+                spdLog(`Ping:     ${Math.round(avg)} ms`);
+                spdLog(`Jitter:   ${Math.round(jit)} ms`);
+                spdLog(`Download: ${cur.toFixed(2)} Mbps`);
+                spdLog(`Upload:   ${u.toFixed(2)} Mbps`);
+                spdLog("══════════════════════════");
+                $("btnSpd").textContent = "🚀 START SPEEDTEST";
+                $("btnSpd").disabled = false;
+                spdRunning = false;
+              }
+            }, 150);
+          }, 400);
+        }
+      }, 150);
+    }, 700);
+  }, 200);
+});
+
+/* ═══ Ping monitor ═══ */
+let pingRunning = false;
+let pingHosts = [{ host: "8.8.8.8", hist: new Array(40).fill(0), cur: null, lost: 0, sent: 0, sel: true }];
+const pingC = $("pingChart"), pingCtx = pingC.getContext("2d");
+function drawPing() {
+  sizeCanvas(pingC);
+  const w = pingC.width / (window.devicePixelRatio || 1), h = pingC.height / (window.devicePixelRatio || 1);
+  pingCtx.clearRect(0, 0, w, h);
+  const pad = 12;
+  const sel = pingHosts.find(x => x.sel);
+  const data = sel ? sel.hist : new Array(40).fill(0);
+  const peak = Math.max(100, ...data);
+  pingCtx.strokeStyle = light ? "#A8B5D1" : "#30363D";
+  for (let i = 0; i < 4; i++) {
+    const y = pad + (h - 2 * pad) * i / 3;
+    pingCtx.beginPath(); pingCtx.moveTo(pad, y); pingCtx.lineTo(w - pad, y); pingCtx.stroke();
+    pingCtx.fillStyle = light ? "#7A8FA3" : "#8B949E";
+    pingCtx.font = '11px "Cascadia Mono", Consolas, monospace';
+    pingCtx.textAlign = "right";
+    pingCtx.fillText(Math.round(peak * (3 - i) / 3) + "ms", pad - 5, y + 4);
+  }
+  pingCtx.strokeStyle = "#0891B2";
+  pingCtx.lineWidth = 2.5;
+  pingCtx.beginPath();
+  data.forEach((v, i) => {
+    const x = pad + (w - 2 * pad) * i / (data.length - 1);
+    const y = h - pad - (v / peak) * (h - 2 * pad);
+    i ? pingCtx.lineTo(x, y) : pingCtx.moveTo(x, y);
+  });
+  pingCtx.stroke();
+}
+function renderHosts() {
+  const el = $("hostsList");
+  el.innerHTML = "";
+  pingHosts.forEach(x => {
+    const div = document.createElement("div");
+    div.className = "host-card" + (x.sel ? " selected" : "");
+    const loss = x.sent ? Math.round(x.lost / x.sent * 100) : 0;
+    div.innerHTML = `<div class="h">${x.host}</div>` +
+      `Latency: ${x.cur == null ? "—" : x.cur.toFixed(1) + " ms"} · Status: ${x.cur == null ? "Idle" : x.cur >= 0 ? "Up" : "Timeout"} · loss ${loss}%`;
+    div.addEventListener("click", () => { pingHosts.forEach(y => y.sel = (y === x)); renderHosts(); });
+    el.appendChild(div);
+  });
+}
+function updatePingMetrics() {
+  const sel = pingHosts.find(x => x.sel);
+  if (!sel) return;
+  const valid = sel.hist.filter(v => v > 0);
+  const avg = valid.length ? valid.reduce((a, b) => a + b, 0) / valid.length : 0;
+  const mn = valid.length ? Math.min(...valid) : 0;
+  const mx = valid.length ? Math.max(...valid) : 0;
+  const loss = sel.sent ? Math.round(sel.lost / sel.sent * 100) : 0;
+  $("pmCur").textContent = sel.cur == null ? "—" : sel.cur < 0 ? "TIMEOUT" : sel.cur.toFixed(1) + " ms";
+  $("pmCur").style.color = sel.cur != null && sel.cur < 0 ? "var(--pink)" : "var(--cyan)";
+  $("pmAvg").textContent = avg ? avg.toFixed(1) : "—";
+  $("pmMinMax").textContent = valid.length ? `${mn.toFixed(0)} / ${mx.toFixed(0)}` : "—";
+  $("pmLoss").textContent = `${loss}% (${sel.lost}/${sel.sent})`;
+  $("pmLoss").style.color = loss > 5 ? "var(--pink)" : "var(--green)";
+}
+$("btnPingAdd").addEventListener("click", () => {
+  const h = $("pingHost").value.trim();
+  if (!h) return;
+  if (!pingHosts.some(x => x.host === h)) {
+    pingHosts.push({ host: h, hist: new Array(40).fill(0), cur: null, lost: 0, sent: 0, sel: false });
+  }
+  renderHosts();
+});
+$("btnPingRemove").addEventListener("click", () => {
+  const sel = pingHosts.find(x => x.sel);
+  if (!sel) return;
+  pingHosts = pingHosts.filter(x => x !== sel);
+  if (pingHosts.length) pingHosts[0].sel = true;
+  renderHosts(); updatePingMetrics(); drawPing();
+});
+$("btnPingToggle").addEventListener("click", () => {
+  pingRunning = !pingRunning;
+  $("btnPingToggle").textContent = pingRunning ? "■ Stop" : "▶ Start";
+  $("btnPingToggle").style.background = pingRunning ? "#EF4444" : "";
+  $("pingBadge").textContent = pingRunning ? "● LIVE" : "○ IDLE";
+  $("pingBadge").style.color = pingRunning ? "var(--green)" : "";
+});
+setInterval(() => {
+  if (!pingRunning) return;
+  pingHosts.forEach(x => {
+    x.sent++;
+    const ok = Math.random() < 0.96;
+    if (ok) {
+      const v = clamp(rnd(28, 120), 0, 300);
+      x.hist.push(v); x.hist.shift();
+      x.cur = v;
+    } else {
+      x.lost++; x.cur = -1;
+      x.hist.push(0); x.hist.shift();
+    }
+  });
+  renderHosts(); updatePingMetrics(); drawPing();
+}, 500);
+renderHosts(); updatePingMetrics(); drawPing();
+
+/* ═══ Game servers ═══ */
+const GS = [
+  ["1.1.1.1", "Cloudflare", "Global"], ["8.8.8.8", "Google DNS", "Global"],
+  ["162.254.192.1", "Steam CM US-East", "US"], ["155.133.252.69", "Steam CM EU-West", "EU"],
+  ["104.160.131.3", "Riot Games NA", "NA"], ["104.160.159.7", "Riot Games EU", "EU"],
+  ["24.105.30.129", "Battle.net US", "US"], ["185.60.112.153", "Battle.net EU", "EU"],
+  ["10.202.10.10", "Radar Game DNS", "IR"], ["178.22.122.100", "Shecan DNS", "IR"],
+  ["78.157.42.100", "Electro DNS", "IR"], ["aparat.com", "Aparat (Iran CDN)", "IR"],
+];
+const gsStats = GS.map(g => ({ host: g[0], name: g[1], region: g[2], hist: [], last: null, lost: 0, sent: 0 }));
+function renderGs() {
+  const el = $("gsGrid");
+  el.innerHTML = "";
+  let best = null;
+  gsStats.forEach(s => {
+    const avg = s.hist.length ? s.hist.reduce((a, b) => a + b, 0) / s.hist.length : null;
+    if (avg != null && (!best || avg < best.avg)) best = { s, avg };
+  });
+  gsStats.forEach(s => {
+    const avg = s.hist.length ? s.hist.reduce((a, b) => a + b, 0) / s.hist.length : null;
+    const jit = s.hist.length > 1 ? s.hist.slice(1).reduce((a, b, i) => a + Math.abs(b - s.hist[i]), 0) / (s.hist.length - 1) : null;
+    const loss = s.sent ? Math.round(s.lost / s.sent * 100) : 0;
+    const div = document.createElement("div");
+    div.className = "gs-card" + (best && best.s === s ? " best" : "");
+    const color = s.last == null ? "var(--muted)" : s.last < 50 ? "var(--green)" : s.last < 100 ? "var(--cyan)" : s.last < 170 ? "var(--amber)" : "var(--pink)";
+    div.innerHTML =
+      `<div class="name"><span>${s.name}</span>${best && best.s === s ? '<span style="color:var(--green)">★ BEST</span>' : ""}</div>` +
+      `<div class="host">${s.host} • ${s.region}</div>` +
+      `<div class="ping" style="color:${color}">${s.last == null ? "— ms" : s.last < 0 ? "TIMEOUT" : Math.round(s.last) + " ms"}</div>` +
+      `<div class="stats">avg ${avg == null ? "—" : avg.toFixed(0) + "ms"} • jit ${jit == null ? "—" : jit.toFixed(0) + "ms"} • loss ${loss}%</div>`;
+    el.appendChild(div);
+  });
+}
+let gsRunning = false;
+$("btnGs").addEventListener("click", () => {
+  gsRunning = !gsRunning;
+  $("btnGs").textContent = gsRunning ? "■ Stop" : "▶ Start";
+  $("btnGs").style.background = gsRunning ? "#EF4444" : "";
+  $("gsStatus").textContent = gsRunning ? "● LIVE" : "○ IDLE";
+  $("gsStatus").style.color = gsRunning ? "var(--green)" : "";
+});
+setInterval(() => {
+  if (!gsRunning) return;
+  gsStats.forEach(s => {
+    s.sent++;
+    if (Math.random() < 0.94) {
+      const v = clamp(rnd(15, 160), 0, 400);
+      s.hist.push(v); if (s.hist.length > 30) s.hist.shift();
+      s.last = v;
+    } else { s.lost++; s.last = -1; }
+  });
+  renderGs();
+}, 1500);
+renderGs();
+</script>
+</body>
+</html>
